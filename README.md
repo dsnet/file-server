@@ -17,7 +17,7 @@ $ file-server
 By default, the server starts up listening on `:8080` and
 serves files from the current working directory.
 
-For more options, see `filer-server -help`:
+For more options, see `file-server -help`:
 ```
 Usage: ./file-server [OPTION]...
 
