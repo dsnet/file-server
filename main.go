@@ -104,7 +104,13 @@ func main() {
 		if fi.IsDir() {
 			serveDirectory(w, r, fp)
 		} else {
-			http.ServeFile(w, r, fp)
+			f, err := os.Open(fp)
+			if err != nil {
+				httpError(w, err)
+				return
+			}
+			defer f.Close()
+			http.ServeContent(w, r, fp, fi.ModTime(), f)
 		}
 	})))
 }
@@ -113,9 +119,15 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string) {
 	// Serve the index page directly (if possible).
 	if *index != "" {
 		fp2 := filepath.Join(fp, *index)
-		_, err := os.Stat(fp2)
+		fi2, err := os.Stat(fp2)
 		if err == nil {
-			http.ServeFile(w, r, fp2)
+			f2, err := os.Open(fp2)
+			if err != nil {
+				httpError(w, err)
+				return
+			}
+			defer f2.Close()
+			http.ServeContent(w, r, fp2, fi2.ModTime(), f2)
 			return
 		} else if !os.IsNotExist(err) {
 			httpError(w, err)
