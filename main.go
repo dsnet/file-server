@@ -11,11 +11,14 @@ import (
 	"html"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"time"
 )
 
 // TODO: Add basic authentication.
@@ -99,23 +102,23 @@ func main() {
 			httpError(w, err)
 			return
 		}
+		f, err := os.Open(fp)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		defer f.Close()
 
 		// Serve either a directory or a file.
 		if fi.IsDir() {
-			serveDirectory(w, r, fp)
+			serveDirectory(w, r, fp, f)
 		} else {
-			f, err := os.Open(fp)
-			if err != nil {
-				httpError(w, err)
-				return
-			}
-			defer f.Close()
 			http.ServeContent(w, r, fp, fi.ModTime(), f)
 		}
 	})))
 }
 
-func serveDirectory(w http.ResponseWriter, r *http.Request, fp string) {
+func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.File) {
 	// Serve the index page directly (if possible).
 	if *index != "" {
 		fp2 := filepath.Join(fp, *index)
@@ -135,20 +138,34 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string) {
 		}
 	}
 
-	// Read the directory entries.
-	fis, err := os.ReadDir(fp)
+	// Read the directory entries, resolving any symbolic links,
+	// and sorting all the entries by name.
+	fis, err := f.Readdir(0)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
+	for i, fi := range fis {
+		if fi.Mode()*os.ModeSymlink > 0 {
+			if fi, _ := os.Stat(filepath.Join(fp, fi.Name())); fi != nil {
+				fis[i] = fi // best effort resolution
+			}
+		}
+	}
+	sort.Slice(fis, func(i, j int) bool {
+		return fis[i].Name() < fis[j].Name()
+	})
 
 	// Format the header.
 	var bb bytes.Buffer
-	bb.WriteString("<html>\n")
+	bb.WriteString("<html lang=\"en\">\n")
 	bb.WriteString("<head>\n")
 	bb.WriteString("<title>" + html.EscapeString(r.URL.Path) + "</title>\n")
 	bb.WriteString("<style>\n")
 	bb.WriteString("body { font-family: mono; }\n")
+	bb.WriteString("h1 { margin: 0; }\n")
+	bb.WriteString("th, td { text-align: left; }\n")
+	bb.WriteString("th, td { padding-right: 2em; }\n")
 	bb.WriteString("</style>\n")
 	bb.WriteString("</head>\n")
 	bb.WriteString("<body>\n")
@@ -166,29 +183,47 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string) {
 				urlPath = strings.TrimSuffix(urlPath, "/")
 				bb.WriteString(" ")
 			}
-			bb.WriteString(`<a href="` + html.EscapeString(urlPath) + `">` + html.EscapeString(name) + `</a>`)
+			urlString := (&url.URL{Path: urlPath}).String()
+			bb.WriteString(`<a href="` + html.EscapeString(urlString) + `">` + html.EscapeString(name) + `</a>`)
 			prevIdx = currIdx
 		}
 	}
 	bb.WriteString("</h1>\n")
+
 	bb.WriteString("<hr>\n")
 
 	// Format the list of files and folders.
-	bb.WriteString("<ul>\n")
+	bb.WriteString("<table>\n")
+	bb.WriteString("<tr>\n")
+	bb.WriteString("<th>Name</th>\n")
+	bb.WriteString("<th>Size</th>\n")
+	bb.WriteString("<th>Last Modified</th>\n")
+	bb.WriteString("</tr>\n")
 	for _, fi := range fis {
 		name := fi.Name()
 		urlPath := path.Join(r.URL.Path, name)
+		urlString := (&url.URL{Path: urlPath}).String()
 		if regexpMatch(hideRx, urlPath) || regexpMatch(excludeRx, urlPath) {
 			continue
 		}
 		if fi.IsDir() {
 			name += "/"
 		}
-		bb.WriteString("<li>")
-		bb.WriteString(`<a href="` + html.EscapeString(urlPath) + `">` + html.EscapeString(name) + `</a>`)
-		bb.WriteString("</li>\n")
+		bb.WriteString("<tr>\n")
+		bb.WriteString("<td>")
+		bb.WriteString(`<a href="` + html.EscapeString(urlString) + `">` + html.EscapeString(name) + `</a>`)
+		bb.WriteString("</td>\n")
+		bb.WriteString("<td>")
+		if fi.Mode().IsRegular() {
+			bb.WriteString(formatSize(fi.Size()))
+		}
+		bb.WriteString("</td>\n")
+		bb.WriteString("<td>")
+		bb.WriteString(fi.ModTime().Round(time.Second).UTC().Format("2006-01-02 15:04:05"))
+		bb.WriteString("</td>\n")
+		bb.WriteString("</tr>\n")
 	}
-	bb.WriteString("</ul>\n")
+	bb.WriteString("</table>\n")
 
 	// Format the footer.
 	bb.WriteString("</body>\n")
@@ -200,6 +235,22 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string) {
 // but reports false if r is nil.
 func regexpMatch(r *regexp.Regexp, s string) bool {
 	return r != nil && r.MatchString(s)
+}
+
+// formatSize returns the formatted size with IEC prefixes.
+// E.g., 81533654 => 77.8MiB
+func formatSize(i int64) string {
+	units := "=KMGTPEZY"
+	n := float64(i)
+	for n >= 1024 {
+		n /= 1024
+		units = units[1:]
+	}
+	if units[0] == '=' {
+		return fmt.Sprintf("%dB", int(n))
+	} else {
+		return fmt.Sprintf("%0.1f%ciB", n, units[0])
+	}
 }
 
 func httpError(w http.ResponseWriter, err error) {
