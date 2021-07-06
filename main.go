@@ -22,9 +22,9 @@ import (
 
 var (
 	addr    = flag.String("addr", ":8080", "The network address to listen on.")
-	hide    = flag.String("hide", "/[.][^/]+$", "Regular expression of file paths to hide. Paths matching this pattern are excluded from directory listings, but direct fetches for this path are still resolved.")
-	exclude = flag.String("exclude", "", "Regular expression of file paths to exclude. Paths matching this pattern are excluded from directory listings and direct fetches for this path report NotFound.")
-	index   = flag.String("index", "", "Name of the index page to directly render for a directory. (e.g., 'index.html'; default none)")
+	hide    = flag.String("hide", "/[.][^/]+$", "Regular expression of file paths to hide.\nPaths matching this pattern are excluded from directory listings,\nbut direct fetches for this path are still resolved.")
+	exclude = flag.String("exclude", "", "Regular expression of file paths to exclude.\nPaths matching this pattern are excluded from directory listings\nand direct fetches for this path report NotFound.")
+	index   = flag.String("index", "", "Name of the index page to directly render for a directory.\n(e.g., 'index.html'; default none)")
 	root    = flag.String("root", ".", "Directory to serve files from.")
 	verbose = flag.Bool("verbose", false, "Log every HTTP request.")
 
