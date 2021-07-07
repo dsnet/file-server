@@ -162,7 +162,7 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 	bb.WriteString("<head>\n")
 	bb.WriteString("<title>" + html.EscapeString(r.URL.Path) + "</title>\n")
 	bb.WriteString("<style>\n")
-	bb.WriteString("body { font-family: mono; }\n")
+	bb.WriteString("body { font-family: monospace; }\n")
 	bb.WriteString("h1 { margin: 0; }\n")
 	bb.WriteString("th, td { text-align: left; }\n")
 	bb.WriteString("th, td { padding-right: 2em; }\n")
@@ -194,11 +194,14 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 
 	// Format the list of files and folders.
 	bb.WriteString("<table>\n")
+	bb.WriteString("<thead>\n")
 	bb.WriteString("<tr>\n")
 	bb.WriteString("<th>Name</th>\n")
 	bb.WriteString("<th>Size</th>\n")
 	bb.WriteString("<th>Last Modified</th>\n")
 	bb.WriteString("</tr>\n")
+	bb.WriteString("</thead>\n")
+	bb.WriteString("<tbody>\n")
 	for _, fi := range fis {
 		name := fi.Name()
 		urlPath := path.Join(r.URL.Path, name)
@@ -223,6 +226,7 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 		bb.WriteString("</td>\n")
 		bb.WriteString("</tr>\n")
 	}
+	bb.WriteString("</tbody>\n")
 	bb.WriteString("</table>\n")
 
 	// Format the footer.
