@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"html"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -24,12 +25,13 @@ import (
 // TODO: Add basic authentication.
 
 var (
-	addr    = flag.String("addr", ":8080", "The network address to listen on.")
-	hide    = flag.String("hide", "/[.][^/]+$", "Regular expression of file paths to hide.\nPaths matching this pattern are excluded from directory listings,\nbut direct fetches for this path are still resolved.")
-	exclude = flag.String("exclude", "", "Regular expression of file paths to exclude.\nPaths matching this pattern are excluded from directory listings\nand direct fetches for this path report NotFound.")
-	index   = flag.String("index", "", "Name of the index page to directly render for a directory.\n(e.g., 'index.html'; default none)")
-	root    = flag.String("root", ".", "Directory to serve files from.")
-	verbose = flag.Bool("verbose", false, "Log every HTTP request.")
+	addr     = flag.String("addr", ":8080", "The network address to listen on.")
+	hide     = flag.String("hide", "/[.][^/]+$", "Regular expression of file paths to hide.\nPaths matching this pattern are excluded from directory listings,\nbut direct fetches for this path are still resolved.")
+	exclude  = flag.String("exclude", "", "Regular expression of file paths to exclude.\nPaths matching this pattern are excluded from directory listings\nand direct fetches for this path report NotFound.")
+	index    = flag.String("index", "", "Name of the index page to directly render for a directory.\n(e.g., 'index.html'; default none)")
+	root     = flag.String("root", ".", "Directory to serve files from.")
+	sendfile = flag.Bool("sendfile", true, "Allow the use of the sendfile syscall.")
+	verbose  = flag.Bool("verbose", false, "Log every HTTP request.")
 
 	hideRx    *regexp.Regexp
 	excludeRx *regexp.Regexp
@@ -113,7 +115,12 @@ func main() {
 		if fi.IsDir() {
 			serveDirectory(w, r, fp, f)
 		} else {
-			http.ServeContent(w, r, fp, fi.ModTime(), f)
+			var rs io.ReadSeeker = f
+			if !*sendfile {
+				// Drop the ReadFrom method to avoid the use of sendfile syscall.
+				rs = struct{ io.ReadSeeker }{f}
+			}
+			http.ServeContent(w, r, fp, fi.ModTime(), rs)
 		}
 	})))
 }
