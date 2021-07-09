@@ -173,6 +173,8 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 	bb.WriteString("h1 { margin: 0; }\n")
 	bb.WriteString("th, td { text-align: left; }\n")
 	bb.WriteString("th, td { padding-right: 2em; }\n")
+	bb.WriteString("th { padding-bottom: 0.5em; }\n")
+	bb.WriteString("a, a:visited, a:hover, a:active { color: blue; }\n")
 	bb.WriteString("</style>\n")
 	bb.WriteString("</head>\n")
 	bb.WriteString("<body>\n")
