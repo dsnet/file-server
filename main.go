@@ -209,6 +209,7 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 	bb.WriteString("</tr>\n")
 	bb.WriteString("</thead>\n")
 	bb.WriteString("<tbody>\n")
+	now := time.Now()
 	for _, fi := range fis {
 		name := fi.Name()
 		urlPath := path.Join(r.URL.Path, name)
@@ -225,11 +226,11 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 		bb.WriteString("</td>\n")
 		bb.WriteString("<td>")
 		if fi.Mode().IsRegular() {
-			bb.WriteString(formatSize(fi.Size()))
+			bb.WriteString(html.EscapeString(formatSize(fi.Size())))
 		}
 		bb.WriteString("</td>\n")
 		bb.WriteString("<td>")
-		bb.WriteString(fi.ModTime().Round(time.Second).UTC().Format("2006-01-02 15:04:05"))
+		bb.WriteString(html.EscapeString(formatTime(fi.ModTime(), now)))
 		bb.WriteString("</td>\n")
 		bb.WriteString("</tr>\n")
 	}
@@ -261,6 +262,17 @@ func formatSize(i int64) string {
 		return fmt.Sprintf("%dB", int(n))
 	} else {
 		return fmt.Sprintf("%0.1f%ciB", n, units[0])
+	}
+}
+
+// formatTime formats the timestamp with second granularity.
+// Timestamps within 12 hours of now only print the time (e.g., "3:04 PM"),
+// otherwise it is formatted as only the date (e.g., "Jan 2, 2006").
+func formatTime(ts, now time.Time) string {
+	if d := ts.Sub(now); -12*time.Hour < d && d < 12*time.Hour {
+		return ts.Format("3:04 PM")
+	} else {
+		return ts.Format("Jan 2, 2006")
 	}
 }
 
