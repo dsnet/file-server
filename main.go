@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
@@ -24,15 +25,16 @@ import (
 
 var (
 	addr     = flag.String("addr", ":8080", "The network address to listen on.")
-	hide     = flag.String("hide", "/[.][^/]+(/|$)", "Regular expression of file paths to hide.\nPaths matching this pattern are excluded from directory listings,\nbut direct fetches for this path are still resolved.")
+	hide     = flag.String("hide", "/[.][^/]+/?$", "Regular expression of file paths to hide.\nPaths matching this pattern are excluded from directory listings,\nbut direct fetches for this path are still resolved.")
 	deny     = flag.String("deny", "", "Regular expression of file paths to deny.\nPaths matching this pattern are excluded from directory listings\nand direct fetches for this path report StatusForbidden.")
 	index    = flag.String("index", "", "Name of the index page to directly render for a directory.\n(e.g., 'index.html'; default none)")
 	root     = flag.String("root", ".", "Directory to serve files from.")
 	sendfile = flag.Bool("sendfile", true, "Allow the use of the sendfile syscall.")
 	verbose  = flag.Bool("verbose", false, "Log every HTTP request.")
 
-	hideRx *regexp.Regexp
-	denyRx *regexp.Regexp
+	hideRx  *regexp.Regexp
+	denyRx  *regexp.Regexp
+	indexRx *regexp.Regexp
 )
 
 func main() {
@@ -64,10 +66,13 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	if strings.Contains(*index, "/") || *index == "." || *index == ".." {
-		fmt.Fprintf(flag.CommandLine.Output(), "Invalid index name: %v\n\n", *index)
-		flag.Usage()
-		os.Exit(1)
+	if *index != "" {
+		indexRx, err = regexp.Compile(*index)
+		if err != nil {
+			fmt.Fprintf(flag.CommandLine.Output(), "Invalid index pattern: %v\n\n", *index)
+			flag.Usage()
+			os.Exit(1)
+		}
 	}
 	if _, err := os.Stat(*root); err != nil {
 		fmt.Fprintf(flag.CommandLine.Output(), "Invalid root directory: %v\n\n", err)
@@ -129,36 +134,12 @@ func main() {
 		if fi.IsDir() {
 			serveDirectory(w, r, fp, f)
 		} else {
-			var rs io.ReadSeeker = f
-			if !*sendfile {
-				// Drop the ReadFrom method to avoid the use of sendfile syscall.
-				rs = struct{ io.ReadSeeker }{f}
-			}
-			http.ServeContent(w, r, fp, fi.ModTime(), rs)
+			serveFile(w, r, fp, f, fi)
 		}
 	})))
 }
 
 func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.File) {
-	// Serve the index page directly (if possible).
-	if *index != "" {
-		fp2 := filepath.Join(fp, *index)
-		fi2, err := os.Stat(fp2)
-		if err == nil {
-			f2, err := os.Open(fp2)
-			if err != nil {
-				httpError(w, err)
-				return
-			}
-			defer f2.Close()
-			http.ServeContent(w, r, fp2, fi2.ModTime(), f2)
-			return
-		} else if !os.IsNotExist(err) {
-			httpError(w, err)
-			return
-		}
-	}
-
 	// Read the directory entries, resolving any symbolic links,
 	// and sorting all the entries by name.
 	fis, err := f.Readdir(0)
@@ -220,14 +201,23 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 	now := time.Now()
 	for _, fi := range fis {
 		name := fi.Name()
-		urlPath := path.Join(r.URL.Path, name)
 		if fi.IsDir() {
 			name += "/"
-			urlPath += "/"
 		}
+		urlPath := r.URL.Path + "/" + name
 		urlString := (&url.URL{Path: name}).String()
 		if regexpMatch(hideRx, urlPath) || regexpMatch(denyRx, urlPath) {
 			continue
+		}
+		if regexpMatch(indexRx, urlPath) {
+			f, err := os.Open(filepath.Join(fp, fi.Name()))
+			if err != nil {
+				httpError(w, err)
+				return
+			}
+			defer f.Close()
+			serveFile(w, r, fp, f, fi)
+			return
 		}
 		bb.WriteString("<tr>\n")
 		bb.WriteString("<td>")
@@ -250,6 +240,17 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 	bb.WriteString("</body>\n")
 	bb.WriteString("</html>\n")
 	w.Write(bb.Bytes())
+}
+
+func serveFile(w http.ResponseWriter, r *http.Request, fp string, f io.ReadSeeker, fi fs.FileInfo) {
+	if regexpMatch(indexRx, r.URL.Path) {
+		relativeRedirect(w, r, "./") // redirect to directory containing index.html
+		return
+	}
+	if !*sendfile {
+		f = struct{ io.ReadSeeker }{f} // drop ReadFrom method to avoid using sendfile syscall
+	}
+	http.ServeContent(w, r, fp, fi.ModTime(), f)
 }
 
 func relativeRedirect(w http.ResponseWriter, r *http.Request, urlPath string) {
