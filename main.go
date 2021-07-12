@@ -25,14 +25,14 @@ import (
 var (
 	addr     = flag.String("addr", ":8080", "The network address to listen on.")
 	hide     = flag.String("hide", "/[.][^/]+(/|$)", "Regular expression of file paths to hide.\nPaths matching this pattern are excluded from directory listings,\nbut direct fetches for this path are still resolved.")
-	exclude  = flag.String("exclude", "", "Regular expression of file paths to exclude.\nPaths matching this pattern are excluded from directory listings\nand direct fetches for this path report NotFound.")
+	deny     = flag.String("deny", "", "Regular expression of file paths to deny.\nPaths matching this pattern are excluded from directory listings\nand direct fetches for this path report StatusForbidden.")
 	index    = flag.String("index", "", "Name of the index page to directly render for a directory.\n(e.g., 'index.html'; default none)")
 	root     = flag.String("root", ".", "Directory to serve files from.")
 	sendfile = flag.Bool("sendfile", true, "Allow the use of the sendfile syscall.")
 	verbose  = flag.Bool("verbose", false, "Log every HTTP request.")
 
-	hideRx    *regexp.Regexp
-	excludeRx *regexp.Regexp
+	hideRx *regexp.Regexp
+	denyRx *regexp.Regexp
 )
 
 func main() {
@@ -56,10 +56,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	if *exclude != "" {
-		excludeRx, err = regexp.Compile(*exclude)
+	if *deny != "" {
+		denyRx, err = regexp.Compile(*deny)
 		if err != nil {
-			fmt.Fprintf(flag.CommandLine.Output(), "Invalid exclude pattern: %v\n\n", *exclude)
+			fmt.Fprintf(flag.CommandLine.Output(), "Invalid deny pattern: %v\n\n", *deny)
 			flag.Usage()
 			os.Exit(1)
 		}
@@ -119,9 +119,9 @@ func main() {
 			}
 		}
 
-		// Exclude paths that match the exclude pattern.
-		if regexpMatch(excludeRx, r.URL.Path) {
-			httpError(w, os.ErrNotExist)
+		// Reject paths that match the deny pattern.
+		if regexpMatch(denyRx, r.URL.Path) {
+			httpError(w, os.ErrPermission)
 			return
 		}
 
@@ -226,7 +226,7 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 			urlPath += "/"
 		}
 		urlString := (&url.URL{Path: name}).String()
-		if regexpMatch(hideRx, urlPath) || regexpMatch(excludeRx, urlPath) {
+		if regexpMatch(hideRx, urlPath) || regexpMatch(denyRx, urlPath) {
 			continue
 		}
 		bb.WriteString("<tr>\n")
