@@ -22,11 +22,9 @@ import (
 	"time"
 )
 
-// TODO: Add basic authentication.
-
 var (
 	addr     = flag.String("addr", ":8080", "The network address to listen on.")
-	hide     = flag.String("hide", "/[.][^/]+$", "Regular expression of file paths to hide.\nPaths matching this pattern are excluded from directory listings,\nbut direct fetches for this path are still resolved.")
+	hide     = flag.String("hide", "/[.][^/]+(/|$)", "Regular expression of file paths to hide.\nPaths matching this pattern are excluded from directory listings,\nbut direct fetches for this path are still resolved.")
 	exclude  = flag.String("exclude", "", "Regular expression of file paths to exclude.\nPaths matching this pattern are excluded from directory listings\nand direct fetches for this path report NotFound.")
 	index    = flag.String("index", "", "Name of the index page to directly render for a directory.\n(e.g., 'index.html'; default none)")
 	root     = flag.String("root", ".", "Directory to serve files from.")
@@ -84,17 +82,16 @@ func main() {
 		w.Header().Set("Cache-Control", "no-cache, no-store, no-transform, must-revalidate, private, max-age=0")
 
 		// For simplicity, always deal with clean paths that are absolute.
+		// If the path had a trailing slash, preserve it.
+		hadSlashSuffix := strings.HasSuffix(r.URL.Path, "/")
 		r.URL.Path = "/" + strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if !strings.HasSuffix(r.URL.Path, "/") && hadSlashSuffix {
+			r.URL.Path += "/"
+		}
 
 		// Log the request.
 		if *verbose {
 			log.Printf("%s %s", r.Method, r.URL.Path)
-		}
-
-		// Exclude paths that match the exclude pattern.
-		if regexpMatch(excludeRx, r.URL.Path) {
-			httpError(w, os.ErrNotExist)
-			return
 		}
 
 		// Verify that the file exists.
@@ -110,6 +107,23 @@ func main() {
 			return
 		}
 		defer f.Close()
+
+		// Check that there is a trailing slash for only directories.
+		if fi.IsDir() != strings.HasSuffix(r.URL.Path, "/") {
+			if fi.IsDir() {
+				relativeRedirect(w, r, path.Base(r.URL.Path)+"/") // directories always have slash suffix
+				return
+			} else {
+				relativeRedirect(w, r, "../"+path.Base(r.URL.Path)) // files never have slash suffix
+				return
+			}
+		}
+
+		// Exclude paths that match the exclude pattern.
+		if regexpMatch(excludeRx, r.URL.Path) {
+			httpError(w, os.ErrNotExist)
+			return
+		}
 
 		// Serve either a directory or a file.
 		if fi.IsDir() {
@@ -181,21 +195,13 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 
 	// Format the title.
 	bb.WriteString("<h1>")
-	r.URL.Path = strings.TrimSuffix(r.URL.Path, "/") + "/"
-	var prevIdx int
-	for i, c := range r.URL.Path {
-		if c == '/' {
-			currIdx := i + len("/")
-			name := r.URL.Path[prevIdx:currIdx]
-			urlPath := r.URL.Path[:currIdx]
-			if prevIdx != 0 {
-				urlPath = strings.TrimSuffix(urlPath, "/")
-				bb.WriteString(" ")
-			}
-			urlString := (&url.URL{Path: urlPath}).String()
-			bb.WriteString(`<a href="` + html.EscapeString(urlString) + `">` + html.EscapeString(name) + `</a>`)
-			prevIdx = currIdx
+	names := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
+	for i, name := range names {
+		if i > 0 {
+			bb.WriteString(" ")
 		}
+		urlString := "." + strings.Repeat("/..", len(names)-1-i)
+		bb.WriteString(`<a href="` + html.EscapeString(urlString) + `">` + html.EscapeString(name+"/") + `</a>`)
 	}
 	bb.WriteString("</h1>\n")
 
@@ -215,12 +221,13 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 	for _, fi := range fis {
 		name := fi.Name()
 		urlPath := path.Join(r.URL.Path, name)
-		urlString := (&url.URL{Path: urlPath}).String()
-		if regexpMatch(hideRx, urlPath) || regexpMatch(excludeRx, urlPath) {
-			continue
-		}
 		if fi.IsDir() {
 			name += "/"
+			urlPath += "/"
+		}
+		urlString := (&url.URL{Path: name}).String()
+		if regexpMatch(hideRx, urlPath) || regexpMatch(excludeRx, urlPath) {
+			continue
 		}
 		bb.WriteString("<tr>\n")
 		bb.WriteString("<td>")
@@ -243,6 +250,14 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 	bb.WriteString("</body>\n")
 	bb.WriteString("</html>\n")
 	w.Write(bb.Bytes())
+}
+
+func relativeRedirect(w http.ResponseWriter, r *http.Request, urlPath string) {
+	if q := r.URL.RawQuery; q != "" {
+		urlPath += "?" + q
+	}
+	w.Header().Set("Location", urlPath)
+	w.WriteHeader(http.StatusMovedPermanently)
 }
 
 // regexpMatch is identical to r.MatchString(s),
