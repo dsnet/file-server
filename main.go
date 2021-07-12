@@ -79,6 +79,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	dir := os.DirFS(*root)
 
 	// Startup the file server.
 	log.Printf("starting up server on %v", *addr)
@@ -100,18 +101,17 @@ func main() {
 		}
 
 		// Verify that the file exists.
-		fp := filepath.Join(*root, filepath.FromSlash(r.URL.Path))
-		fi, err := os.Stat(fp)
-		if err != nil {
-			httpError(w, err)
-			return
-		}
-		f, err := os.Open(fp)
+		f, err := dir.Open(filepath.Join(".", filepath.FromSlash(r.URL.Path)))
 		if err != nil {
 			httpError(w, err)
 			return
 		}
 		defer f.Close()
+		fi, err := f.Stat()
+		if err != nil {
+			httpError(w, err)
+			return
+		}
 
 		// Check that there is a trailing slash for only directories.
 		if fi.IsDir() != strings.HasSuffix(r.URL.Path, "/") {
@@ -132,25 +132,35 @@ func main() {
 
 		// Serve either a directory or a file.
 		if fi.IsDir() {
-			serveDirectory(w, r, fp, f)
+			serveDirectory(w, r, dir, f)
 		} else {
-			serveFile(w, r, fp, f, fi)
+			serveFile(w, r, f, fi, true)
 		}
 	})))
 }
 
-func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.File) {
+func serveDirectory(w http.ResponseWriter, r *http.Request, dir fs.FS, f fs.File) {
 	// Read the directory entries, resolving any symbolic links,
 	// and sorting all the entries by name.
-	fis, err := f.Readdir(0)
+	fd, ok := f.(fs.ReadDirFile)
+	if !ok {
+		httpError(w, os.ErrInvalid)
+		return
+	}
+	fes, err := fd.ReadDir(0)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	for i, fi := range fis {
-		if fi.Mode()*os.ModeSymlink > 0 {
-			if fi, _ := os.Stat(filepath.Join(fp, fi.Name())); fi != nil {
-				fis[i] = fi // best effort resolution
+	fis := make([]fs.FileInfo, 0, len(fes))
+	for _, fe := range fes {
+		if fe.Type()&os.ModeSymlink == 0 {
+			if fi, _ := fe.Info(); fi != nil {
+				fis = append(fis, fi)
+			}
+		} else {
+			if fi, _ := fs.Stat(dir, filepath.Join(".", filepath.FromSlash(r.URL.Path), fe.Name())); fi != nil {
+				fis = append(fis, fi) // best effort symlink resolution
 			}
 		}
 	}
@@ -210,13 +220,14 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 			continue
 		}
 		if regexpMatch(indexRx, urlPath) {
-			f, err := os.Open(filepath.Join(fp, fi.Name()))
+			f, err := dir.Open(filepath.Join(".", filepath.FromSlash(r.URL.Path), fi.Name()))
 			if err != nil {
 				httpError(w, err)
 				return
 			}
 			defer f.Close()
-			serveFile(w, r, fp, f, fi)
+			r.URL.Path = urlPath
+			serveFile(w, r, f, fi, false)
 			return
 		}
 		bb.WriteString("<tr>\n")
@@ -242,15 +253,24 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, fp string, f *os.Fil
 	w.Write(bb.Bytes())
 }
 
-func serveFile(w http.ResponseWriter, r *http.Request, fp string, f io.ReadSeeker, fi fs.FileInfo) {
-	if regexpMatch(indexRx, r.URL.Path) {
+func serveFile(w http.ResponseWriter, r *http.Request, f fs.File, fi fs.FileInfo, allowRedirect bool) {
+	if allowRedirect && regexpMatch(indexRx, r.URL.Path) {
 		relativeRedirect(w, r, "./") // redirect to directory containing index.html
 		return
 	}
-	if !*sendfile {
-		f = struct{ io.ReadSeeker }{f} // drop ReadFrom method to avoid using sendfile syscall
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		b, err := io.ReadAll(f)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		rs = bytes.NewReader(b)
 	}
-	http.ServeContent(w, r, fp, fi.ModTime(), f)
+	if !*sendfile {
+		rs = struct{ io.ReadSeeker }{rs} // drop ReadFrom method to avoid using sendfile syscall
+	}
+	http.ServeContent(w, r, r.URL.Path, fi.ModTime(), rs)
 }
 
 func relativeRedirect(w http.ResponseWriter, r *http.Request, urlPath string) {
