@@ -22,20 +22,22 @@ For more options, see `file-server -help`:
 Usage: ./file-server [OPTION]...
 
   -addr string
-        The network address to listen on. (default ":8080")
-  -exclude string
-        Regular expression of file paths to exclude.
-        Paths matching this pattern are excluded from directory listings
-        and direct fetches for this path report NotFound.
+    	The network address to listen on. (default ":8080")
+  -deny string
+    	Regular expression of file paths to deny.
+    	Paths matching this pattern are excluded from directory listings
+    	and direct requests for this path report StatusForbidden.
   -hide string
-        Regular expression of file paths to hide.
-        Paths matching this pattern are excluded from directory listings, 
-        but direct fetches for this path are still resolved. (default "/[.]")
+    	Regular expression of file paths to hide.
+    	Paths matching this pattern are excluded from directory listings,
+    	but direct requests for this path are still resolved. (default "/[.][^/]+/?$")
   -index string
-        Name of the index page to directly render for a directory.
-        (e.g., 'index.html'; default none)
+    	Regular expression of file paths to treat as index.html pages.
+    	(e.g., '/index[.]html$'; default none)
   -root string
-        Directory to serve files from. (default ".")
+    	Directory to serve files from. (default ".")
+  -sendfile
+    	Allow the use of the sendfile syscall. (default true)
   -verbose
-        Log every HTTP request.
+    	Log every HTTP request.
 ```
