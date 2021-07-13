@@ -300,7 +300,7 @@ func renderHTML(w http.ResponseWriter, r *http.Request, renderBody func(io.Write
 	var bb bytes.Buffer
 	bb.WriteString("<html lang=\"en\">\n")
 	bb.WriteString("<head>\n")
-	bb.WriteString("<title>" + html.EscapeString(r.URL.Path) + "</title>\n")
+	bb.WriteString("<title>" + html.EscapeString(path.Base(r.URL.Path)) + "</title>\n")
 	bb.WriteString("<style>\n")
 	bb.WriteString("body { font-family: monospace; }\n")
 	bb.WriteString("h1 { margin: 0; }\n")
