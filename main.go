@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -82,8 +83,19 @@ func main() {
 	dir := os.DirFS(*root)
 
 	// Startup the file server.
-	log.Printf("starting up server on %v", *addr)
-	log.Fatal(http.ListenAndServe(*addr, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var ln net.Listener
+	for {
+		var err error
+		ln, err = net.Listen("tcp", *addr)
+		if err == nil {
+			break
+		}
+		const retryPeriod = 30 * time.Second
+		log.Printf("net.Listen error: %v; retry in %v", err, retryPeriod)
+		time.Sleep(retryPeriod)
+	}
+	log.Printf("started up server on %v", *addr)
+	log.Fatal(http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Never cache the server results. Consider it dynamically changing.
 		w.Header().Set("Cache-Control", "no-cache, no-store, no-transform, must-revalidate, private, max-age=0")
 
