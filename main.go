@@ -312,6 +312,7 @@ func renderHTML(w http.ResponseWriter, r *http.Request, renderBody func(io.Write
 	var bb bytes.Buffer
 	bb.WriteString("<html lang=\"en\">\n")
 	bb.WriteString("<head>\n")
+	bb.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">`)
 	bb.WriteString("<title>" + html.EscapeString(path.Base(r.URL.Path)) + "</title>\n")
 	bb.WriteString("<style>\n")
 	bb.WriteString("body { font-family: monospace; }\n")
