@@ -49,6 +49,10 @@ var (
 
 	//go:embed static/js/files.js
 	filesJS string
+	//go:embed static/js/operations.js
+	operationsJS string
+	//go:embed static/js/buttons.js
+	buttonsJS string
 	//go:embed static/js/format.js
 	formatJS string
 )
@@ -227,7 +231,7 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, dir fs.FS, f fs.File
 	}
 
 	// Format the list of files and folders.
-	scripts := []string{filesJS, formatJS}
+	scripts := []string{filesJS, operationsJS + formatJS + buttonsJS}
 	fileInfos, err := json.Marshal(fis)
 	if err != nil {
 		httpError(w, r, err)

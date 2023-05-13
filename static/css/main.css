@@ -12,6 +12,9 @@ th, td {
 th, td {
 	padding-right: 2em;
 }
+th:first-child, td:first-child {
+	padding-right: 0em;
+}
 th {
 	padding-bottom: 0.5em;
 }
@@ -21,4 +24,33 @@ a, a:visited, a:hover, a:active {
 }
 .column-header, .column-header:visited, .column-header:hover, .column-header:active {
 	color: black;
+}
+
+input[type="file"] {
+	display: none;
+}
+input[type="checkbox"] {
+	margin: 0em 0.2em 0em 0em;
+	opacity: 0.5;
+}
+
+.button {
+	background-color: #e0e0e0;
+	border: 1px solid #404040;
+	border-radius: 0.3em;
+	color: black;
+	text-align: center;
+	text-decoration: none;
+	display: inline-block;
+	font-size: 13;
+	font-family: monospace;
+	margin: 0.2em 0.5em 0.2em 0em;
+	padding: 0.25em 0.3em 0.2em 0.3em;
+}
+.button:hover {
+	background-color: #d0d0d0;
+}
+.button:active {
+	background-color: #f0f0f0;
+	border: 1px solid #808080;
 }

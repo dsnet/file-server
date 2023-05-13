@@ -1,6 +1,24 @@
+<button type="button" class="button" onclick="downloadFiles();">Download</button><label for="upload-files" class="button">Upload files</label><input id="upload-files" type="file" multiple onchange="uploadFiles('upload-files');"/><label for="upload-folder" class="button">Upload folder</label><input id="upload-folder" type="file" multiple webkitdirectory="true" onchange="uploadFiles('upload-folder');"/><button type="button" class="button" onclick="newFolder();">New folder</button><button type="button" class="button" onclick="renameFile();">Rename</button><button type="button" class="button" onclick="moveFiles();">Move</button><button type="button" class="button" onclick="deleteFiles();">Delete</button>
+<hr>
+
+<div id="operations-div" style="display:none;">
+<table id="operations-list" style="margin-bottom:0.3em;">
+<thead>
+<tr>
+    <th><input id="select-all-operations" type="checkbox" onclick="selectAllOperations();"></th>
+    <th><u>Operation</u></th>
+    <th><u>Status</u></th>
+</tr>
+</thead>
+<tbody></tbody>
+</table><button type="button" class="button" onclick="hideSelectedOperations();">Hide</button>
+<hr>
+</div>
+
 <table id="file-list">
 <thead>
 <tr>
+	<th><input id="select-all-files" type="checkbox" onclick="selectAllFiles();"></th>
 	<th id="name-column-header"><a class="column-header" href="" onclick="reorderFiles(compareNames); return false;">Name</a></th>
 	<th id="size-column-header"><a class="column-header" href="" onclick="reorderFiles(compareSizes); return false;">Size</a></th>
 	<th id="date-column-header"><a class="column-header" href="" onclick="reorderFiles(compareDates); return false;">Last Modified</a></th>
