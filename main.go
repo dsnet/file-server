@@ -6,6 +6,8 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"html"
@@ -14,12 +16,10 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 )
@@ -36,6 +36,21 @@ var (
 	hideRx  *regexp.Regexp
 	denyRx  *regexp.Regexp
 	indexRx *regexp.Regexp
+)
+
+var (
+	//go:embed static/css/main.css
+	mainCSS string
+
+	//go:embed static/html/main.html
+	mainHTML string
+	//go:embed static/html/body.html
+	bodyHTML string
+
+	//go:embed static/js/files.js
+	filesJS string
+	//go:embed static/js/format.js
+	formatJS string
 )
 
 func main() {
@@ -164,16 +179,13 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, dir fs.FS, f fs.File
 		httpError(w, r, err)
 		return
 	}
-	sort.Slice(fes, func(i, j int) bool {
-		return fes[i].Name() < fes[j].Name()
-	})
 
 	type fileInfo struct {
-		Name    string
-		Size    int64
-		ModTime time.Time
+		Name string `json:"name"`
+		Size int64  `json:"size"`
+		Date int64  `json:"date"` // seconds since Unix epoch
 	}
-	var fis []fileInfo
+	fis := []fileInfo{}
 	for _, fe := range fes {
 		// Obtain the fs.FileInfo, resolving symbolic links if necessary.
 		var fi fs.FileInfo
@@ -211,40 +223,20 @@ func serveDirectory(w http.ResponseWriter, r *http.Request, dir fs.FS, f fs.File
 		if fi.Mode().IsRegular() {
 			size = fi.Size()
 		}
-		fis = append(fis, fileInfo{Name: name, Size: size, ModTime: fi.ModTime()})
+		fis = append(fis, fileInfo{Name: name, Size: size, Date: fi.ModTime().Unix()})
 	}
 
 	// Format the list of files and folders.
-	renderHTML(w, r, func(w io.Writer) {
-		io.WriteString(w, "<table>\n")
-		io.WriteString(w, "<thead>\n")
-		io.WriteString(w, "<tr>\n")
-		io.WriteString(w, "<th>Name</th>\n")
-		io.WriteString(w, "<th>Size</th>\n")
-		io.WriteString(w, "<th>Last Modified</th>\n")
-		io.WriteString(w, "</tr>\n")
-		io.WriteString(w, "</thead>\n")
-		io.WriteString(w, "<tbody>\n")
-		now := time.Now()
-		for _, fi := range fis {
-			urlString := (&url.URL{Path: fi.Name}).String()
-			io.WriteString(w, "<tr>\n")
-			io.WriteString(w, "<td>")
-			io.WriteString(w, `<a href="`+html.EscapeString(urlString)+`">`+html.EscapeString(fi.Name)+`</a>`)
-			io.WriteString(w, "</td>\n")
-			io.WriteString(w, "<td>")
-			if !strings.HasSuffix(fi.Name, "/") {
-				io.WriteString(w, html.EscapeString(formatSize(fi.Size)))
-			}
-			io.WriteString(w, "</td>\n")
-			io.WriteString(w, "<td>")
-			io.WriteString(w, html.EscapeString(formatTime(fi.ModTime, now)))
-			io.WriteString(w, "</td>\n")
-			io.WriteString(w, "</tr>\n")
-		}
-		io.WriteString(w, "</tbody>\n")
-		io.WriteString(w, "</table>\n")
-	})
+	scripts := []string{filesJS, formatJS}
+	fileInfos, err := json.Marshal(fis)
+	if err != nil {
+		httpError(w, r, err)
+		return
+	}
+	scripts = append(scripts, "fileInfos = "+string(fileInfos)+";\n"+"reorderFiles(compareNames);\n")
+	body := bodyHTML
+	body = strings.Replace(body, "{{.Script}}", "\n"+strings.Join(scripts, "\n"), 1)
+	renderHTML(w, r, body)
 }
 
 func serveFile(w http.ResponseWriter, r *http.Request, f fs.File, modTime time.Time, allowRedirect bool) {
@@ -281,57 +273,10 @@ func regexpMatch(r *regexp.Regexp, s string) bool {
 	return r != nil && r.MatchString(s)
 }
 
-// formatSize returns the formatted size with IEC prefixes.
-// E.g., 81533654 => 77.8MiB
-func formatSize(i int64) string {
-	units := "=KMGTPEZY"
-	n := float64(i)
-	for n >= 1024 {
-		n /= 1024
-		units = units[1:]
-	}
-	if units[0] == '=' {
-		return fmt.Sprintf("%dB", int(n))
-	} else {
-		return fmt.Sprintf("%0.1f%ciB", n, units[0])
-	}
-}
-
-// formatTime formats the timestamp with second granularity.
-// Timestamps within 12 hours of now only print the time (e.g., "3:04 PM"),
-// otherwise it is formatted as only the date (e.g., "Jan 2, 2006").
-func formatTime(ts, now time.Time) string {
-	if d := ts.Sub(now); -12*time.Hour < d && d < 12*time.Hour {
-		return ts.Format("3:04 PM")
-	} else {
-		return ts.Format("Jan 2, 2006")
-	}
-}
-
-func renderHTML(w http.ResponseWriter, r *http.Request, renderBody func(io.Writer)) {
-	var bb bytes.Buffer
-	bb.WriteString("<html lang=\"en\">\n")
-	bb.WriteString("<head>\n")
-	bb.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">`)
-	bb.WriteString("<title>" + html.EscapeString(path.Base(r.URL.Path)) + "</title>\n")
-	bb.WriteString("<style>\n")
-	bb.WriteString("body { font-family: monospace; }\n")
-	bb.WriteString("h1 { margin: 0; }\n")
-	bb.WriteString("th, td { text-align: left; }\n")
-	bb.WriteString("th, td { padding-right: 2em; }\n")
-	bb.WriteString("th { padding-bottom: 0.5em; }\n")
-	bb.WriteString("a, a:visited, a:hover, a:active { color: blue; }\n")
-	bb.WriteString("</style>\n")
-	bb.WriteString("</head>\n")
-	bb.WriteString("<body>\n")
-
-	// Format the title.
-	bb.WriteString("<h1>")
+func renderHTML(w http.ResponseWriter, r *http.Request, body string) {
+	var headers []string
 	names := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
 	for i, name := range names {
-		if i > 0 {
-			bb.WriteString(" ")
-		}
 		name += "/"
 		urlString := "." + strings.Repeat("/..", len(names)-1-i)
 		if !strings.HasSuffix(r.URL.Path, "/") {
@@ -342,17 +287,15 @@ func renderHTML(w http.ResponseWriter, r *http.Request, renderBody func(io.Write
 				urlString = strings.TrimSuffix(urlString, "/..")
 			}
 		}
-		bb.WriteString(`<a href="` + html.EscapeString(urlString) + `">` + html.EscapeString(name) + `</a>`)
+		headers = append(headers, `<a href="`+html.EscapeString(urlString)+`">`+html.EscapeString(name)+`</a>`)
 	}
-	bb.WriteString("</h1>\n")
-	bb.WriteString("<hr>\n")
 
-	renderBody(&bb)
-
-	bb.WriteString("</body>\n")
-	bb.WriteString("</html>\n")
-
-	w.Write(bb.Bytes())
+	page := mainHTML
+	page = strings.Replace(page, "{{.Title}}", html.EscapeString(path.Base(r.URL.Path)), 1)
+	page = strings.Replace(page, "{{.Style}}", mainCSS, 1)
+	page = strings.Replace(page, "{{.Header}}", strings.Join(headers, " "), 1)
+	page = strings.Replace(page, "{{.Body}}", body, 1)
+	io.WriteString(w, page)
 }
 
 func httpError(w http.ResponseWriter, r *http.Request, err error) {
@@ -367,7 +310,6 @@ func httpError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 	w.WriteHeader(code)
-	renderHTML(w, r, func(w io.Writer) {
-		io.WriteString(w, http.StatusText(code)+": "+html.EscapeString(err.Error()))
-	})
+
+	renderHTML(w, r, http.StatusText(code)+": "+html.EscapeString(err.Error()))
 }
