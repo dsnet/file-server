@@ -19,9 +19,9 @@ function formatDate(unix) {
 		if (date.getHours() > 12) {
 			label = "PM", offset = 12;
 		}
-		return String(date.getHours()-offset) + ":" + String(date.getMinutes()).padStart(2, '0') + " " + offset;
+		return String(date.getHours()-offset) + ":" + String(date.getMinutes()).padStart(2, '0') + " " + label;
 	} else {
 		const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-		return month[date.getMonth()] + " " + String(date.getDate()) + ", " + String(date.getYear());
+		return month[date.getMonth()] + " " + String(date.getDate()) + ", " + String(date.getFullYear());
 	}
 }
