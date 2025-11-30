@@ -1,3 +1,3 @@
 module github.com/dsnet/file-server
 
-go 1.16
+go 1.25

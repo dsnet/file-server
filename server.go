@@ -37,7 +37,7 @@ var (
 )
 
 type Server struct {
-	root fs.FS
+	root fs.FS // immutable once set
 
 	hideRx  *regexp.Regexp
 	denyRx  *regexp.Regexp

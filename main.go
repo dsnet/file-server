@@ -13,6 +13,8 @@ import (
 	"os"
 	"regexp"
 	"time"
+
+	"github.com/dsnet/file-server/internal/fsx"
 )
 
 func main() {
@@ -68,7 +70,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	srv.root = os.DirFS(*root)
+	srv.root = fsx.Dir(*root)
 	srv.sendfile = *sendfile
 	srv.verbose = *verbose
 
